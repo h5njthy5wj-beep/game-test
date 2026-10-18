@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>进化论</title>
+  <!-- Phaser 3：CDN 引入，无需 npm，双击本文件即可在浏览器运行（需能访问网络以加载 Phaser） -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #061018;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: #e8f4ff;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #game { width: 100%; height: 100%; }
+
+    /* 顶部 HUD */
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 5;
+      display: none;
+      pointer-events: none;
+      gap: 10px;
+      flex-direction: column;
+    }
+    #hud.show { display: flex; }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .panel {
+      background: rgba(6, 16, 24, 0.72);
+      border: 1px solid rgba(120, 210, 255, 0.22);
+      border-radius: 14px;
+      padding: 10px 14px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+    .title {
+      font-size: 13px;
+      letter-spacing: 0.2em;
+      color: #8ad7ff;
+      margin-bottom: 4px;
+    }
+    #species-name { font-size: 22px; font-weight: 700; }
+    #species-rank, #carry-count, #score { font-size: 13px; color: #b7c9d6; margin-top: 2px; }
+    #buffs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      min-height: 0;
+    }
+    .buff {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #eef8ff;
+    }
+    #chain {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      max-width: min(520px, 58vw);
+      justify-content: flex-end;
+    }
+    .chip {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      opacity: 0.35;
+      border: 2px solid transparent;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .chip.reached { opacity: 1; }
+    .chip.current {
+      opacity: 1;
+      transform: scale(1.12);
+      border-color: #fff;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+    }
+
+    /* 开始 / 结束遮罩 */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(8, 28, 42, 0.92), rgba(2, 8, 12, 0.96));
+    }
+    .overlay.hidden { display: none; }
+    .card {
+      width: min(520px, 92vw);
+      padding: 28px 26px 24px;
+      border-radius: 20px;
+      background: rgba(12, 28, 40, 0.9);
+      border: 1px solid rgba(120, 210, 255, 0.25);
+      text-align: center;
+    }
+    .card h1 {
+      font-size: 42px;
+      letter-spacing: 0.28em;
+      margin: 0 0 6px 12px;
+      color: #dff6ff;
+    }
+    .card .sub { color: #8ad7ff; margin-bottom: 18px; letter-spacing: 0.18em; }
+    .rules {
+      text-align: left;
+      color: #c5d7e4;
+      font-size: 14px;
+      line-height: 1.7;
+      margin: 0 0 22px;
+    }
+    .btn {
+      cursor: pointer;
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 28px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #06202c;
+      background: linear-gradient(180deg, #d6f4ff, #7ec8ea);
+      pointer-events: auto;
+    }
+    .btn:active { transform: scale(0.98); }
+    .hint { margin-top: 12px; font-size: 12px; color: #7f97a8; }
+    #end-title { font-size: 32px; margin-bottom: 8px; }
+    #end-desc { color: #c5d7e4; margin-bottom: 20px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud">
+    <div class="hud-row">
+      <div class="panel">
+        <div class="title">进化论</div>
+        <div id="species-name">🦠 细菌</div>
+        <div id="species-rank">等级 1 / 18</div>
+        <div id="carry-count">携带 0</div>
+        <div id="score">分数 0</div>
+        <div id="buffs"></div>
+      </div>
+      <div class="panel" id="chain"></div>
+    </div>
+  </div>
+
+  <div id="start-overlay" class="overlay">
+    <div class="card">
+      <h1>进化论</h1>
+      <div class="sub">从单细胞走向智人</div>
+      <div class="rules">
+        · 触屏拖动或移动鼠标，控制你的生物前进。<br />
+        · 碰到<strong>更低等</strong>的生物：自动携带在身边。<br />
+        · <strong>两个相同</strong>的生物会合成高一级。<br />
+        · 碰到<strong>更高等</strong>的生物：退化一等；最低等再被打则死亡。<br />
+        · 地图会随机出现道具：疾风加速、时停、烈焰 / 雷电 / 冰霜武器。<br />
+        · 目标：进化到第 18 级「智人」。
+      </div>
+      <button class="btn" id="btn-start">开始进化</button>
+      <div class="hint">本游戏使用 Phaser 3，请保持网络畅通以加载引擎</div>
+    </div>
+  </div>
+
+  <div id="end-overlay" class="overlay hidden">
+    <div class="card">
+      <div id="end-title">进化中断</div>
+      <div id="end-desc"></div>
+      <button class="btn" id="btn-retry">再次进化</button>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 《进化论》
+     * 18 级生物链 + 携带 / 合成 / 退化
+     * 单文件运行：用鼠标或触屏控制方向
+     */
+
+    // ---------- 18 级进化链：从低等到高等 ----------
+    const SPECIES = [
+      { name: '细菌',   emoji: '🦠', color: 0x7bed9f },
+      { name: '草履虫', emoji: '🫧', color: 0x70a1ff },
+      { name: '水母',   emoji: '🪼', color: 0xa29bfe },
+      { name: '蠕虫',   emoji: '🪱', color: 0xff9ff3 },
+      { name: '虾',     emoji: '🦐', color: 0xff6b81 },
+      { name: '鱼',     emoji: '🐟', color: 0x48dbfb },
+      { name: '青蛙',   emoji: '🐸', color: 0x1dd1a1 },
+      { name: '蜥蜴',   emoji: '🦎', color: 0x10ac84 },
+      { name: '蛇',     emoji: '🐍', color: 0x2ed573 },
+      { name: '老鼠',   emoji: '🐭', color: 0xa4b0be },
+      { name: '兔子',   emoji: '🐰', color: 0xfeca57 },
+      { name: '狐狸',   emoji: '🦊', color: 0xff9f43 },
+      { name: '狼',     emoji: '🐺', color: 0xced6e0 },
+      { name: '豹',     emoji: '🐆', color: 0xe1b12c },
+      { name: '虎',     emoji: '🐯', color: 0xff793f },
+      { name: '熊',     emoji: '🐻', color: 0xc8a27c },
+      { name: '猿',     emoji: '🦍', color: 0x8d6e63 },
+      { name: '智人',   emoji: '🧑', color: 0xf8c291 }
+    ];
+
+    const MAX_LEVEL = SPECIES.length; // 18
+    const MAX_NPC = 42;               // 同时存在的野生生物上限
+    const MAX_FOLLOWERS = 12;         // 最多携带数量
+    const MAX_PICKUPS = 5;            // 同时存在的道具上限
+    const SPAWN_RADIUS = 980;         // 在玩家周围刷新
+    const DESPAWN_RADIUS = 1400;      // 过远则移除，保持无限地图
+    const BUFF_MS = 5000;             // 道具效果统一持续 5 秒
+
+    // 随机道具：加速、时停、三类可消灭其他生物的武器
+    const PICKUPS = [
+      { id: 'speed',     name: '疾风', emoji: '💨', color: 0xffe66d, hint: '移速 +100%~200%' },
+      { id: 'freeze',    name: '时停', emoji: '🕰️', color: 0xc8d6e5, hint: '其他生物静止 5 秒' },
+      { id: 'fire',      name: '烈焰', emoji: '🔥', color: 0xff6b35, hint: '周身火焰，碰触即灭' },
+      { id: 'lightning', name: '雷电', emoji: '⚡', color: 0xf9ca24, hint: '落雷消灭附近生物' },
+      { id: 'frost',     name: '冰霜', emoji: '❄️', color: 0x74b9ff, hint: '寒冰光环，粉碎敌人' }
+    ];
+
+    function speciesRadius(level) {
+      return 16 + level * 2.4;
+    }
+
+    function speciesSpeed(level) {
+      return Math.max(78, 196 - level * 5);
+    }
+
+    function hexToCss(hex) {
+      return '#' + hex.toString(16).padStart(6, '0');
+    }
+
+    // ---------- 主场景 ----------
+    class EvolutionScene extends Phaser.Scene {
+      constructor() {
+        super('Evolution');
+      }
+
+      create() {
+        this.score = 0;
+        this.won = false;
+        this.dead = false;
+        this.invincibleUntil = 0;
+        this.pointerDown = false;
+        this.moveDir = new Phaser.Math.Vector2(1, 0);
+        this.npcs = [];
+        this.followers = [];
+        this.pickups = [];
+        this.buffs = {
+          speedUntil: 0,
+          speedMul: 1,
+          freezeUntil: 0,
+          weaponUntil: 0,
+          weaponType: null
+        };
+        this.weaponTick = 0;
+        this.pickupSpawnAt = 0;
+        this.bolts = [];
+
+        this.cameras.main.setBackgroundColor('#07141d');
+        this.drawInfiniteGrid();
+
+        // 玩家从最低等「细菌」起步
+        this.player = this.spawnCreature(0, 0, 1, 'player');
+        this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+        this.updateZoom();
+
+        this.input.addPointer(2);
+        this.input.on('pointerdown', () => { this.pointerDown = true; });
+        this.input.on('pointerup', () => { this.pointerDown = false; });
+
+        this.fxGfx = this.add.graphics().setDepth(40);
+        this.aura = this.add.circle(0, 0, 28, 0xffffff, 0).setStrokeStyle(2, 0xffffff, 0);
+        this.player.add(this.aura);
+        this.player.sendToBack(this.aura);
+
+        this.spawnInitialWorld();
+        this.buildChainHud();
+        this.refreshHud();
+
+        document.getElementById('hud').classList.add('show');
+      }
+
+      /** 用重复方格模拟无限空间背景 */
+      drawInfiniteGrid() {
+        this.grid = this.add.graphics();
+        this.grid.setDepth(-10);
+      }
+
+      redrawGrid() {
+        const cam = this.cameras.main;
+        const spacing = 80;
+        const x0 = Math.floor((cam.scrollX - 200) / spacing) * spacing;
+        const y0 = Math.floor((cam.scrollY - 200) / spacing) * spacing;
+        const w = cam.width / cam.zoom + 400;
+        const h = cam.height / cam.zoom + 400;
+
+        this.grid.clear();
+        this.grid.lineStyle(1, 0x123044, 0.55);
+        for (let x = x0; x < x0 + w; x += spacing) {
+          this.grid.lineBetween(x, y0, x, y0 + h);
+        }
+        for (let y = y0; y < y0 + h; y += spacing) {
+          this.grid.lineBetween(x0, y, x0 + w, y);
+        }
+        this.grid.fillStyle(0x1b4d68, 0.18);
+        for (let x = x0; x < x0 + w; x += spacing) {
+          for (let y = y0; y < y0 + h; y += spacing) {
+            this.grid.fillCircle(x, y, 1.4);
+          }
+        }
+      }
+
+      /**
+       * 生成一只生物。
+       * kind: 'player' | 'npc' | 'follower'
+       * level: 1~18
+       */
+      spawnCreature(x, y, level, kind) {
+        const spec = SPECIES[level - 1];
+        const r = speciesRadius(level);
+        const container = this.add.container(x, y);
+        container.setDepth(kind === 'player' ? 20 : kind === 'follower' ? 15 : 10);
+
+        const glow = this.add.circle(0, 0, r + 8, spec.color, 0.18);
+        const body = this.add.circle(0, 0, r, spec.color, 0.92);
+        body.setStrokeStyle(3, 0xffffff, 0.35);
+        const label = this.add.text(0, 0, spec.emoji, {
+          fontSize: Math.floor(r * 1.15) + 'px'
+        }).setOrigin(0.5, 0.58);
+
+        container.add([glow, body, label]);
+        container.setSize(r * 2, r * 2);
+
+        this.physics.world.enable(container);
+        container.body.setCircle(r, -r + container.width / 2, -r + container.height / 2);
+        container.body.setCollideWorldBounds(false);
+        container.body.setDamping(true);
+        container.body.setDrag(0.0008);
+
+        container.level = level;
+        container.kind = kind;
+        container.bodyCircle = body;
+        container.glow = glow;
+        container.label = label;
+        container.alive = true;
+        container.wanderTimer = 0;
+        container.wanderDir = new Phaser.Math.Vector2(
+          Phaser.Math.FloatBetween(-1, 1),
+          Phaser.Math.FloatBetween(-1, 1)
+        ).normalize();
+
+        return container;
+      }
+
+      /** 进化 / 退化后刷新外观 */
+      applyLevel(creature, level) {
+        level = Phaser.Math.Clamp(level, 1, MAX_LEVEL);
+        const spec = SPECIES[level - 1];
+        const r = speciesRadius(level);
+        creature.level = level;
+        creature.bodyCircle.setRadius(r);
+        creature.bodyCircle.setFillStyle(spec.color, 0.92);
+        creature.glow.setRadius(r + 8);
+        creature.glow.setFillStyle(spec.color, 0.18);
+        creature.label.setText(spec.emoji);
+        creature.label.setFontSize(Math.floor(r * 1.15));
+        creature.setSize(r * 2, r * 2);
+        creature.body.setCircle(r, -r + creature.width / 2, -r + creature.height / 2);
+        this.tweens.add({
+          targets: creature,
+          scale: { from: 0.82, to: 1 },
+          duration: 180,
+          ease: 'Back.Out'
+        });
+      }
+
+      spawnInitialWorld() {
+        for (let i = 0; i < 28; i++) this.spawnNpcNearPlayer();
+        for (let i = 0; i < 3; i++) this.spawnPickupNearPlayer();
+      }
+
+      /** 在玩家附近刷新一枚随机道具 */
+      spawnPickupNearPlayer() {
+        if (this.pickups.length >= MAX_PICKUPS) return;
+        const def = Phaser.Utils.Array.GetRandom(PICKUPS);
+        const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+        const dist = Phaser.Math.FloatBetween(180, 520);
+        const x = this.player.x + Math.cos(angle) * dist;
+        const y = this.player.y + Math.sin(angle) * dist;
+
+        const box = this.add.container(x, y);
+        box.setDepth(18);
+        const glow = this.add.circle(0, 0, 22, def.color, 0.28);
+        const body = this.add.circle(0, 0, 16, def.color, 0.95);
+        body.setStrokeStyle(2, 0xffffff, 0.7);
+        const label = this.add.text(0, 0, def.emoji, { fontSize: '18px' }).setOrigin(0.5, 0.55);
+        box.add([glow, body, label]);
+        box.setSize(32, 32);
+        this.physics.world.enable(box);
+        box.body.setCircle(16, 0, 0);
+
+        box.def = def;
+        box.alive = true;
+        this.tweens.add({
+          targets: box,
+          y: y - 8,
+          duration: 900,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.InOut'
+        });
+        this.tweens.add({
+          targets: glow,
+          scale: 1.25,
+          alpha: 0.45,
+          duration: 700,
+          yoyo: true,
+          repeat: -1
+        });
+        this.pickups.push(box);
+      }
+
+      /** 在玩家附近随机刷新一只野生生物 */
+      spawnNpcNearPlayer() {
+        if (this.npcs.length >= MAX_NPC) return;
+        const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+        const dist = Phaser.Math.FloatBetween(260, SPAWN_RADIUS);
+        const x = this.player.x + Math.cos(angle) * dist;
+        const y = this.player.y + Math.sin(angle) * dist;
+        const level = this.rollNpcLevel();
+        const npc = this.spawnCreature(x, y, level, 'npc');
+        this.npcs.push(npc);
+      }
+
+      /** 等级分布：多数低于玩家，少量同级，少量更高（构成威胁） */
+      rollNpcLevel() {
+        const p = this.player.level;
+        const roll = Math.random();
+        if (roll < 0.62) return Phaser.Math.Between(1, Math.max(1, p - 1));
+        if (roll < 0.82) return p;
+        return Math.min(MAX_LEVEL, p + Phaser.Math.Between(1, 3));
+      }
+
+      update(_time, delta) {
+        if (this.dead) return;
+
+        this.redrawGrid();
+        this.steerPlayer();
+        this.updateFollowers(delta);
+        this.updateNpcs(delta);
+        this.updateWeapon(delta);
+        this.handleCollisions();
+        this.maintainPopulation();
+        this.updateZoom();
+        this.tryAutoMergeFollowers();
+        this.refreshBuffHud();
+      }
+
+      /** 鼠标 / 触屏：指针按下时朝指针方向移动，松开保持最后方向 */
+      steerPlayer() {
+        const pointer = this.input.activePointer;
+        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        if (this.pointerDown || pointer.isDown) {
+          const dx = world.x - this.player.x;
+          const dy = world.y - this.player.y;
+          if (dx * dx + dy * dy > 16) {
+            this.moveDir.set(dx, dy).normalize();
+          }
+        }
+        const speed = speciesSpeed(this.player.level) * this.buffs.speedMul;
+        this.player.body.setVelocity(this.moveDir.x * speed, this.moveDir.y * speed);
+      }
+
+      /** 携带的生物环绕玩家飞行 */
+      updateFollowers(delta) {
+        const n = this.followers.length;
+        const orbit = 42 + speciesRadius(this.player.level);
+        this.followers.forEach((f, i) => {
+          if (!f.alive) return;
+          const ang = (Math.PI * 2 * i) / Math.max(n, 1) + this.time.now / 700;
+          const tx = this.player.x + Math.cos(ang) * (orbit + i * 3);
+          const ty = this.player.y + Math.sin(ang) * (orbit + i * 3);
+          const vx = (tx - f.x) * 8;
+          const vy = (ty - f.y) * 8;
+          f.body.setVelocity(vx, vy);
+        });
+      }
+
+      updateNpcs(delta) {
+        const frozen = this.time.now < this.buffs.freezeUntil;
+        const px = this.player.x;
+        const py = this.player.y;
+        this.npcs.forEach((npc) => {
+          if (frozen) {
+            npc.body.setVelocity(0, 0);
+            npc.bodyCircle.setFillStyle(0xa8e0ff, 0.88);
+            return;
+          }
+          const spec = SPECIES[npc.level - 1];
+          npc.bodyCircle.setFillStyle(spec.color, 0.92);
+          npc.wanderTimer -= delta;
+          if (npc.wanderTimer <= 0) {
+            npc.wanderTimer = Phaser.Math.Between(500, 1600);
+            npc.wanderDir.set(
+              Phaser.Math.FloatBetween(-1, 1),
+              Phaser.Math.FloatBetween(-1, 1)
+            ).normalize();
+          }
+
+          // 低等会略微躲开玩家，高等会略微靠近（制造压迫）
+          const toPlayer = new Phaser.Math.Vector2(px - npc.x, py - npc.y);
+          const dist = toPlayer.length();
+          if (dist < 280 && dist > 1) {
+            toPlayer.scale(1 / dist);
+            if (npc.level > this.player.level) npc.wanderDir.lerp(toPlayer, 0.12);
+            else if (npc.level < this.player.level) npc.wanderDir.lerp(toPlayer.negate(), 0.08);
+          }
+
+          const spd = speciesSpeed(npc.level) * 0.72;
+          npc.body.setVelocity(npc.wanderDir.x * spd, npc.wanderDir.y * spd);
+        });
+      }
+
+      handleCollisions() {
+        const now = this.time.now;
+        const pr = speciesRadius(this.player.level);
+
+        // 玩家捡取道具
+        for (let i = this.pickups.length - 1; i >= 0; i--) {
+          const p = this.pickups[i];
+          if (!p.alive) continue;
+          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, p.x, p.y);
+          if (d > pr + 18) continue;
+          this.collectPickup(p, i);
+        }
+
+        // 玩家 vs 野生
+        for (let i = this.npcs.length - 1; i >= 0; i--) {
+          const npc = this.npcs[i];
+          if (!npc.alive) continue;
+          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y);
+          const hit = speciesRadius(npc.level) + pr - 6;
+          if (d > hit) continue;
+          this.resolvePlayerHitNpc(npc, i);
+        }
+
+        if (now < this.invincibleUntil) return;
+
+        // 携带生物 vs 野生：携带者也可「收编」更低等，或与相同合成
+        for (let f = this.followers.length - 1; f >= 0; f--) {
+          const follower = this.followers[f];
+          if (!follower.alive) continue;
+          for (let i = this.npcs.length - 1; i >= 0; i--) {
+            const npc = this.npcs[i];
+            if (!npc.alive) continue;
+            const d = Phaser.Math.Distance.Between(follower.x, follower.y, npc.x, npc.y);
+            if (d > speciesRadius(follower.level) + speciesRadius(npc.level) - 4) continue;
+            this.resolveFollowerHitNpc(follower, npc, i);
+          }
+        }
+      }
+
+      resolvePlayerHitNpc(npc, index) {
+        // 武器生效时：接触即可消灭（含更高等），不再退化
+        if (this.time.now < this.buffs.weaponUntil) {
+          this.destroyNpcWithWeapon(index);
+          return;
+        }
+        if (npc.level < this.player.level) {
+          this.captureNpc(npc, index);
+          return;
+        }
+        if (npc.level === this.player.level) {
+          this.removeNpc(index);
+          this.evolvePlayer();
+          return;
+        }
+        // 碰到更高等：退化
+        if (this.time.now < this.invincibleUntil) return;
+        this.removeNpc(index);
+        this.degradePlayer();
+      }
+
+      resolveFollowerHitNpc(follower, npc, npcIndex) {
+        if (npc.level < follower.level) {
+          this.captureNpc(npc, npcIndex);
+          return;
+        }
+        if (npc.level === follower.level) {
+          this.removeNpc(npcIndex);
+          this.upgradeFollower(follower);
+        }
+        // 携带生物碰到更高的：被打散，不直接导致玩家死亡
+        if (npc.level > follower.level) {
+          this.dropFollower(follower);
+        }
+      }
+
+      captureNpc(npc, index) {
+        if (this.followers.length >= MAX_FOLLOWERS) {
+          this.floatText(npc.x, npc.y, '携带已满', '#ffd166');
+          this.removeNpc(index);
+          this.score += 5;
+          this.refreshHud();
+          return;
+        }
+        npc.kind = 'follower';
+        npc.setDepth(15);
+        this.npcs.splice(index, 1);
+        this.followers.push(npc);
+        this.score += 8 * npc.level;
+        this.floatText(npc.x, npc.y, '携带 ' + SPECIES[npc.level - 1].name, '#9be7ff');
+        this.refreshHud();
+      }
+
+      upgradeFollower(follower) {
+        const next = follower.level + 1;
+        // 携带生物不能超过或等于玩家：若合成后持平/更高，则并入玩家，玩家进化
+        if (next >= this.player.level) {
+          this.removeFollower(follower);
+          this.evolvePlayer();
+          return;
+        }
+        this.applyLevel(follower, next);
+        this.score += 20 * next;
+        this.floatText(follower.x, follower.y, '合成 ' + SPECIES[next - 1].name, '#b8f2c0');
+        this.refreshHud();
+      }
+
+      /** 两只相同的携带生物自动合成 */
+      tryAutoMergeFollowers() {
+        const groups = {};
+        this.followers.forEach((f) => {
+          if (!f.alive) return;
+          (groups[f.level] || (groups[f.level] = [])).push(f);
+        });
+        Object.keys(groups).forEach((lv) => {
+          const list = groups[lv];
+          while (list.length >= 2) {
+            const a = list.pop();
+            const b = list.pop();
+            this.removeFollower(b);
+            this.upgradeFollower(a);
+          }
+        });
+      }
+
+      evolvePlayer() {
+        if (this.player.level >= MAX_LEVEL) {
+          this.score += 50;
+          this.floatText(this.player.x, this.player.y, '已是最高等', '#ffeaa7');
+          this.refreshHud();
+          return;
+        }
+        const next = this.player.level + 1;
+        this.applyLevel(this.player, next);
+        this.score += 40 * next;
+        this.floatText(this.player.x, this.player.y, '进化！' + SPECIES[next - 1].name, '#fff');
+        this.dropIllegalFollowers();
+        this.refreshHud();
+        if (next === MAX_LEVEL && !this.won) {
+          this.won = true;
+          this.time.delayedCall(700, () => this.endGame(true));
+        }
+      }
+
+      degradePlayer() {
+        this.cameras.main.flash(180, 180, 40, 40);
+        this.invincibleUntil = this.time.now + 900;
+        if (this.player.level <= 1) {
+          this.playerDied();
+          return;
+        }
+        const next = this.player.level - 1;
+        this.applyLevel(this.player, next);
+        this.floatText(this.player.x, this.player.y, '退化 → ' + SPECIES[next - 1].name, '#ff8b8b');
+        this.dropIllegalFollowers();
+        this.refreshHud();
+      }
+
+      playerDied() {
+        this.dead = true;
+        this.player.alive = false;
+        this.tweens.add({
+          targets: this.player,
+          scale: 0,
+          alpha: 0,
+          duration: 280,
+          onComplete: () => this.endGame(false)
+        });
+      }
+
+      /** 携带物不得 ≥ 玩家当前等级，否则释放回野外 */
+      dropIllegalFollowers() {
+        [...this.followers].forEach((f) => {
+          if (f.level >= this.player.level) this.dropFollower(f);
+        });
+      }
+
+      dropFollower(follower) {
+        if (!follower.alive) return;
+        follower.kind = 'npc';
+        follower.setDepth(10);
+        this.removeFollower(follower, false);
+        this.npcs.push(follower);
+        this.floatText(follower.x, follower.y, '走散', '#ffd3b0');
+        this.refreshHud();
+      }
+
+      removeFollower(follower, destroy = true) {
+        const i = this.followers.indexOf(follower);
+        if (i >= 0) this.followers.splice(i, 1);
+        if (destroy) this.destroyCreature(follower);
+      }
+
+      removeNpc(index) {
+        const npc = this.npcs[index];
+        this.npcs.splice(index, 1);
+        this.destroyCreature(npc);
+      }
+
+      destroyCreature(c) {
+        if (!c) return;
+        c.alive = false;
+        this.tweens.add({
+          targets: c,
+          scale: 0,
+          duration: 140,
+          onComplete: () => c.destroy()
+        });
+      }
+
+      maintainPopulation() {
+        // 过远的野生生物移除，近处补刷，形成无限世界
+        for (let i = this.npcs.length - 1; i >= 0; i--) {
+          const npc = this.npcs[i];
+          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y);
+          if (d > DESPAWN_RADIUS) this.removeNpc(i);
+        }
+        while (this.npcs.length < MAX_NPC) this.spawnNpcNearPlayer();
+
+        for (let i = this.pickups.length - 1; i >= 0; i--) {
+          const p = this.pickups[i];
+          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, p.x, p.y);
+          if (d > DESPAWN_RADIUS) this.removePickup(i);
+        }
+        if (this.time.now >= this.pickupSpawnAt && this.pickups.length < MAX_PICKUPS) {
+          this.spawnPickupNearPlayer();
+          this.pickupSpawnAt = this.time.now + Phaser.Math.Between(1800, 3800);
+        }
+      }
+
+      collectPickup(pickup, index) {
+        const def = pickup.def;
+        const now = this.time.now;
+        this.removePickup(index);
+
+        if (def.id === 'speed') {
+          // 增加 100%~200%，即速度变为原来的 2.0~3.0 倍，持续 5 秒
+          this.buffs.speedMul = 1 + Phaser.Math.FloatBetween(1, 2);
+          this.buffs.speedUntil = now + BUFF_MS;
+          this.floatText(this.player.x, this.player.y - 24,
+            '疾风 ×' + this.buffs.speedMul.toFixed(1), '#ffe66d');
+        } else if (def.id === 'freeze') {
+          this.buffs.freezeUntil = now + BUFF_MS;
+          this.floatText(this.player.x, this.player.y - 24, '时停 5 秒', '#dfe6e9');
+        } else {
+          this.buffs.weaponType = def.id;
+          this.buffs.weaponUntil = now + BUFF_MS;
+          this.floatText(this.player.x, this.player.y - 24, def.name + '武装 5 秒', '#ffd6a5');
+        }
+        this.score += 15;
+        this.refreshHud();
+      }
+
+      removePickup(index) {
+        const p = this.pickups[index];
+        this.pickups.splice(index, 1);
+        if (!p) return;
+        p.alive = false;
+        this.tweens.killTweensOf(p);
+        this.tweens.add({
+          targets: p,
+          scale: 1.4,
+          alpha: 0,
+          duration: 160,
+          onComplete: () => p.destroy()
+        });
+      }
+
+      /** 烈焰 / 冰霜光环接触消灭；雷电周期性劈向附近目标 */
+      updateWeapon(delta) {
+        this.fxGfx.clear();
+        const now = this.time.now;
+        this.bolts = this.bolts.filter((b) => now < b.until);
+        this.bolts.forEach((b) => {
+          this.fxGfx.lineStyle(2, 0xffeaa7, 0.95);
+          this.fxGfx.lineBetween(b.x1, b.y1, b.x2, b.y2);
+          this.fxGfx.fillStyle(0xffffff, 0.9);
+          this.fxGfx.fillCircle(b.x2, b.y2, 6);
+        });
+        const armed = now < this.buffs.weaponUntil;
+        const type = this.buffs.weaponType;
+        const r = speciesRadius(this.player.level);
+
+        if (now >= this.buffs.speedUntil) this.buffs.speedMul = 1;
+
+        // 玩家周身光环：疾风残影 / 火焰 / 雷电 / 冰霜
+        if (this.buffs.speedMul > 1) {
+          this.player.glow.setFillStyle(0xffe66d, 0.32);
+        }
+        if (armed) {
+          const pulse = 0.45 + Math.sin(now / 90) * 0.2;
+          if (type === 'fire') {
+            this.aura.setRadius(r + 34);
+            this.aura.setFillStyle(0xff6b35, 0.16);
+            this.aura.setStrokeStyle(3, 0xff9f43, pulse);
+            this.player.glow.setFillStyle(0xff6b35, 0.4);
+          } else if (type === 'lightning') {
+            this.aura.setRadius(r + 26);
+            this.aura.setFillStyle(0xf9ca24, 0.12);
+            this.aura.setStrokeStyle(3, 0xffeaa7, pulse);
+            this.player.glow.setFillStyle(0xf9ca24, 0.4);
+          } else if (type === 'frost') {
+            this.aura.setRadius(r + 30);
+            this.aura.setFillStyle(0x74b9ff, 0.16);
+            this.aura.setStrokeStyle(3, 0xdfe6e9, pulse);
+            this.player.glow.setFillStyle(0x74b9ff, 0.4);
+          }
+        } else {
+          this.aura.setFillStyle(0xffffff, 0);
+          this.aura.setStrokeStyle(2, 0xffffff, 0);
+          if (this.buffs.speedMul <= 1) {
+            const spec = SPECIES[this.player.level - 1];
+            this.player.glow.setFillStyle(spec.color, 0.18);
+          }
+          this.buffs.weaponType = null;
+          return;
+        }
+
+        if (type === 'fire' || type === 'frost') {
+          const reach = r + (type === 'fire' ? 36 : 30);
+          for (let i = this.npcs.length - 1; i >= 0; i--) {
+            const npc = this.npcs[i];
+            if (!npc.alive) continue;
+            const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y);
+            if (d <= reach + speciesRadius(npc.level) * 0.4) {
+              this.destroyNpcWithWeapon(i);
+            }
+          }
+        }
+
+        if (type === 'lightning') {
+          this.weaponTick += delta;
+          if (this.weaponTick >= 280) {
+            this.weaponTick = 0;
+            this.zapNearestNpcs(3, 210);
+          }
+        }
+      }
+
+      zapNearestNpcs(count, range) {
+        const scored = this.npcs
+          .map((npc, index) => ({
+            npc, index,
+            d: Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y)
+          }))
+          .filter((x) => x.npc.alive && x.d < range)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, count);
+
+        scored.forEach((hit) => {
+          this.bolts.push({
+            x1: this.player.x,
+            y1: this.player.y,
+            x2: hit.npc.x,
+            y2: hit.npc.y,
+            until: this.time.now + 160
+          });
+        });
+        // 从后往前删，避免下标错乱
+        scored.sort((a, b) => b.index - a.index).forEach((hit) => {
+          if (this.npcs[hit.index] === hit.npc) this.destroyNpcWithWeapon(hit.index);
+        });
+      }
+
+      destroyNpcWithWeapon(index) {
+        const npc = this.npcs[index];
+        if (!npc) return;
+        const type = this.buffs.weaponType;
+        const label = type === 'fire' ? '焚灭' : type === 'lightning' ? '劈中' : '冻碎';
+        this.score += 12 * npc.level;
+        this.floatText(npc.x, npc.y, label, '#ffeaa7');
+        this.removeNpc(index);
+        this.refreshHud();
+      }
+
+      refreshBuffHud() {
+        const now = this.time.now;
+        const bits = [];
+        if (now < this.buffs.speedUntil) {
+          const s = Math.ceil((this.buffs.speedUntil - now) / 1000);
+          bits.push('<span class="buff">💨 疾风 ×' + this.buffs.speedMul.toFixed(1) + ' ' + s + 's</span>');
+        }
+        if (now < this.buffs.freezeUntil) {
+          const s = Math.ceil((this.buffs.freezeUntil - now) / 1000);
+          bits.push('<span class="buff">🕰️ 时停 ' + s + 's</span>');
+        }
+        if (now < this.buffs.weaponUntil && this.buffs.weaponType) {
+          const s = Math.ceil((this.buffs.weaponUntil - now) / 1000);
+          const def = PICKUPS.find((p) => p.id === this.buffs.weaponType);
+          bits.push('<span class="buff">' + def.emoji + ' ' + def.name + ' ' + s + 's</span>');
+        }
+        document.getElementById('buffs').innerHTML = bits.join('');
+      }
+
+      updateZoom() {
+        const z = Phaser.Math.Clamp(1.08 - this.player.level * 0.028, 0.58, 1.08);
+        this.cameras.main.setZoom(Phaser.Math.Linear(this.cameras.main.zoom, z, 0.04));
+      }
+
+      floatText(x, y, msg, color) {
+        const t = this.add.text(x, y, msg, {
+          fontSize: '16px',
+          color: color,
+          fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
+          stroke: '#041018',
+          strokeThickness: 4
+        }).setOrigin(0.5).setDepth(50);
+        this.tweens.add({
+          targets: t,
+          y: y - 36,
+          alpha: 0,
+          duration: 700,
+          onComplete: () => t.destroy()
+        });
+      }
+
+      buildChainHud() {
+        const box = document.getElementById('chain');
+        box.innerHTML = SPECIES.map((s, i) =>
+          `<div class="chip" id="chip-${i + 1}" title="${s.name}" style="background:${hexToCss(s.color)}33">${s.emoji}</div>`
+        ).join('');
+      }
+
+      refreshHud() {
+        const s = SPECIES[this.player.level - 1];
+        document.getElementById('species-name').textContent = s.emoji + ' ' + s.name;
+        document.getElementById('species-rank').textContent = '等级 ' + this.player.level + ' / ' + MAX_LEVEL;
+        document.getElementById('carry-count').textContent = '携带 ' + this.followers.length + ' / ' + MAX_FOLLOWERS;
+        document.getElementById('score').textContent = '分数 ' + this.score;
+        for (let i = 1; i <= MAX_LEVEL; i++) {
+          const chip = document.getElementById('chip-' + i);
+          chip.classList.toggle('reached', i <= this.player.level);
+          chip.classList.toggle('current', i === this.player.level);
+        }
+      }
+
+      endGame(victory) {
+        const overlay = document.getElementById('end-overlay');
+        document.getElementById('end-title').textContent = victory ? '进化完成' : '进化中断';
+        const name = SPECIES[this.player.level - 1].name;
+        document.getElementById('end-desc').innerHTML = victory
+          ? '你抵达了最高等生物「智人」。<br/>分数 ' + this.score
+          : '你在「' + name + '」阶段落败，被更高等的生命改写。<br/>分数 ' + this.score;
+        overlay.classList.remove('hidden');
+      }
+    }
+
+    const gameConfig = {
+      type: Phaser.AUTO,
+      parent: 'game',
+      backgroundColor: '#07141d',
+      scale: {
+        mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+      },
+      physics: {
+        default: 'arcade',
+        arcade: { debug: false }
+      },
+      scene: [EvolutionScene]
+    };
+
+    let game = null;
+
+    function startGame() {
+      document.getElementById('start-overlay').classList.add('hidden');
+      document.getElementById('end-overlay').classList.add('hidden');
+      document.getElementById('hud').classList.remove('show');
+      if (game) {
+        game.destroy(true);
+        document.getElementById('game').innerHTML = '';
+      }
+      game = new Phaser.Game(gameConfig);
+    }
+
+    document.getElementById('btn-start').addEventListener('click', startGame);
+    document.getElementById('btn-retry').addEventListener('click', startGame);
+  </script>
+</body>
+</html>
